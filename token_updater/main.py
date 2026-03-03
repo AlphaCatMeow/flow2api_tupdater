@@ -7,7 +7,7 @@ from .api import app
 from .browser import browser_manager
 from .updater import token_syncer
 from .database import profile_db
-from .config import config
+from .config import config, IS_VERCEL
 from .logger import logger
 
 
@@ -41,20 +41,24 @@ async def startup():
     await profile_db.init()
     logger.info("数据库初始化完成")
 
-    scheduler.add_job(
-        scheduled_sync,
-        trigger=IntervalTrigger(minutes=config.refresh_interval),
-        id=SYNC_JOB_ID,
-        max_instances=1,
-        coalesce=True,
-        replace_existing=True
-    )
-    scheduler.start()
-
-    app.state.scheduler = scheduler
     app.state.sync_job_id = SYNC_JOB_ID
 
-    logger.info(f"定时任务已启动: 每 {config.refresh_interval} 分钟执行一次")
+    if IS_VERCEL:
+        app.state.scheduler = None
+        logger.info("检测到 Vercel 环境，已跳过内置定时任务")
+    else:
+        scheduler.add_job(
+            scheduled_sync,
+            trigger=IntervalTrigger(minutes=config.refresh_interval),
+            id=SYNC_JOB_ID,
+            max_instances=1,
+            coalesce=True,
+            replace_existing=True
+        )
+        scheduler.start()
+        app.state.scheduler = scheduler
+        logger.info(f"定时任务已启动: 每 {config.refresh_interval} 分钟执行一次")
+
     logger.info(f"Flow2API URL: {config.flow2api_url}")
     logger.info(f"API 端口: {config.api_port}")
     logger.info("")
@@ -67,7 +71,8 @@ async def shutdown():
     logger.info("正在关闭...")
     if scheduler.running:
         scheduler.shutdown()
-    await browser_manager.stop()
+    if not IS_VERCEL:
+        await browser_manager.stop()
 
 
 @app.on_event("startup")

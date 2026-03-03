@@ -2,6 +2,8 @@
 
 轻量版 Token 自动更新工具，通过 Playwright 持久化 Profile 管理 Google Labs 登录状态，并用 Headless 模式定时刷新 Token。
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/genz27/flow2api_tupdater&project-name=flow2api-token-updater&repository-name=flow2api_tupdater&env=ADMIN_PASSWORD,API_KEY,FLOW2API_URL,CONNECTION_TOKEN)
+
 ## 特性
 
 - 🪶 轻量化：VNC/Xvfb/noVNC 按需启动（仅登录时运行），降低常驻内存占用
@@ -9,6 +11,27 @@
 - 👥 多 Profile：支持管理多个账号（Profile 级隔离）
 - 🌐 代理支持：每个 Profile 可配置独立代理
 - 🖥️ 可视化登录：需要时开启 VNC 登录，关闭浏览器后自动停止以省内存
+
+## 一键部署
+
+### Vercel
+
+点击上方按钮即可导入仓库到 Vercel。
+
+建议在 Vercel 项目中至少配置以下环境变量：
+
+- `ADMIN_PASSWORD`
+- `API_KEY`
+- `FLOW2API_URL`
+- `CONNECTION_TOKEN`
+
+Vercel 运行时限制说明：
+
+- 默认关闭 VNC 登录入口，浏览器可视化登录不适用于 Vercel
+- 不启动内置定时任务；如需自动同步，请改用 Vercel Cron 或外部 Cron 请求接口
+- 本地数据库和 Profile 数据默认写入 `/tmp`，实例重启后不会持久保留
+
+如果你需要长期保存登录状态、使用 Playwright 浏览器登录或依赖定时任务，仍然建议使用下面的 Docker 方式部署。
 
 ## 快速开始
 
@@ -47,6 +70,9 @@ docker compose up -d --build
 | REFRESH_INTERVAL | 刷新间隔(分钟) | 60 |
 | ENABLE_VNC | 是否启用 VNC 登录入口(1/0) | 1 |
 | VNC_PASSWORD | VNC 密码（开启 VNC 时使用） | flow2api |
+| DB_PATH | SQLite 数据库文件路径 | /app/data/profiles.db |
+| PROFILES_DIR | 浏览器 Profile 存储目录 | /app/profiles |
+| CONFIG_FILE | 持久化配置文件路径 | /app/data/config.json |
 
 ## API
 

@@ -1,6 +1,7 @@
 ﻿"""Token Updater API v3.1"""
 import secrets
 import time
+from pathlib import Path
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +16,7 @@ from .config import config
 from .logger import logger
 
 app = FastAPI(title="Flow2API Token Updater", version="3.1.0")
+STATIC_INDEX_FILE = Path(__file__).resolve().parent / "static" / "index.html"
 
 app.add_middleware(
     CORSMiddleware,
@@ -144,7 +146,7 @@ async def check_auth():
 # Static
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    return FileResponse("/app/token_updater/static/index.html")
+    return FileResponse(STATIC_INDEX_FILE)
 
 
 # Status
