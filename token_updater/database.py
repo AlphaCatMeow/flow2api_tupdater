@@ -11,9 +11,7 @@ class ProfileDB:
     
     def __init__(self):
         self.db_path = config.db_path
-        parent = os.path.dirname(self.db_path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
     
     async def init(self):
         """初始化数据库"""

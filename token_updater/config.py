@@ -1,28 +1,10 @@
-"""Token Updater 配置 v3.1"""
+﻿"""Token Updater 配置 v3.1"""
 import json
 import os
-from pathlib import Path
-
 from pydantic import BaseModel
 
 
 PERSIST_KEYS = ("flow2api_url", "connection_token", "refresh_interval")
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-IS_VERCEL = bool(os.getenv("VERCEL") or os.getenv("VERCEL_ENV"))
-
-
-def _default_path(container_path: str, local_relative_path: str, vercel_relative_path: str) -> str:
-    if IS_VERCEL:
-        return str(Path("/tmp/flow2api_tupdater") / vercel_relative_path)
-    if Path("/app").is_dir():
-        return container_path
-    return str(PROJECT_ROOT / local_relative_path)
-
-
-DEFAULT_CONFIG_FILE = _default_path("/app/data/config.json", "data/config.json", "config.json")
-DEFAULT_DB_PATH = _default_path("/app/data/profiles.db", "data/profiles.db", "profiles.db")
-DEFAULT_PROFILES_DIR = _default_path("/app/profiles", "profiles", "profiles")
-DEFAULT_FLOW2API_URL = "http://host.docker.internal:8000" if Path("/app").is_dir() else "http://127.0.0.1:8000"
 
 
 def _get_env(name: str) -> str | None:
@@ -55,9 +37,7 @@ def _load_persisted(path: str) -> dict:
 
 
 def _save_persisted(path: str, data: dict) -> None:
-    parent = os.path.dirname(path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=True, indent=2)
     try:
@@ -73,12 +53,12 @@ class Config(BaseModel):
     connection_token: str
     refresh_interval: int
     enable_vnc: bool
-    profiles_dir: str
+    profiles_dir: str = "/app/profiles"
     labs_url: str = "https://labs.google/fx/tools/flow"
     login_url: str = "https://labs.google/fx/api/auth/signin/google"
     session_cookie_name: str = "__Secure-next-auth.session-token"
     api_port: int
-    db_path: str
+    db_path: str = "/app/data/profiles.db"
     session_ttl_minutes: int
     config_file: str
 
@@ -88,13 +68,13 @@ class Config(BaseModel):
 
 
 def _build_config() -> Config:
-    config_file = _get_env("CONFIG_FILE") or DEFAULT_CONFIG_FILE
+    config_file = _get_env("CONFIG_FILE") or "/app/data/config.json"
     persisted = _load_persisted(config_file)
 
-    flow2api_url = _get_env("FLOW2API_URL") or persisted.get("flow2api_url") or DEFAULT_FLOW2API_URL
+    flow2api_url = _get_env("FLOW2API_URL") or persisted.get("flow2api_url") or "http://host.docker.internal:8000"
     connection_token = _get_env("CONNECTION_TOKEN") or persisted.get("connection_token", "")
     refresh_interval = _parse_int(_get_env("REFRESH_INTERVAL") or str(persisted.get("refresh_interval", 60)), 60)
-    enable_vnc = _parse_bool(_get_env("ENABLE_VNC"), default=not IS_VERCEL)
+    enable_vnc = _parse_bool(_get_env("ENABLE_VNC"), default=True)
 
     return Config(
         admin_password=_get_env("ADMIN_PASSWORD") or "",
@@ -103,9 +83,7 @@ def _build_config() -> Config:
         connection_token=connection_token,
         refresh_interval=refresh_interval,
         enable_vnc=enable_vnc,
-        profiles_dir=_get_env("PROFILES_DIR") or DEFAULT_PROFILES_DIR,
         api_port=_parse_int(_get_env("API_PORT"), 8002),
-        db_path=_get_env("DB_PATH") or DEFAULT_DB_PATH,
         session_ttl_minutes=_parse_int(_get_env("SESSION_TTL_MINUTES"), 1440),
         config_file=config_file,
     )
