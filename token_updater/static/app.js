@@ -169,36 +169,19 @@ function showLogin() {
         <div class="login-card">
             <section class="login-hero">
                 <span class="eyebrow">Flow2API Token Updater</span>
-                <h1 class="login-title">把 Token 管理台<br>做得更顺眼。</h1>
-                <p class="login-subtitle">
-                    支持多 Profile、按目标实例分组同步、SSE 实时刷新，
-                    还能为单个账号覆盖 Flow2API 地址和连接 Token。
-                </p>
-                <div class="feature-list">
-                    <div class="feature-item">
-                        <strong>智能刷新</strong>
-                        仅刷新真正需要更新的账号，减少无意义操作。
-                    </div>
-                    <div class="feature-item">
-                        <strong>实时感知</strong>
-                        SSE 推送更新，断线自动重连，必要时轮询兜底。
-                    </div>
-                    <div class="feature-item">
-                        <strong>图表更清晰</strong>
-                        支持时间范围切换、失败原因聚合、目标实例分布。
-                    </div>
-                </div>
+                <h1 class="login-title">Flow2API Token Updater</h1>
+                <p class="login-subtitle">Profile Administration & Token Sync Console</p>
             </section>
             <section class="login-panel">
                 <div>
-                    <h2 class="panel-title">管理员登录</h2>
-                    <p class="panel-copy">输入后台密码进入管理台。</p>
+                    <h2 class="panel-title">Admin Sign In</h2>
+                    <p class="panel-copy">Enter the administrator password to continue.</p>
                 </div>
                 <div class="field">
-                    <label for="login-password">管理员密码</label>
-                    <input id="login-password" type="password" placeholder="请输入管理员密码" onkeydown="if(event.key==='Enter'){doLogin()}">
+                    <label for="login-password">Administrator Password</label>
+                    <input id="login-password" type="password" placeholder="Enter administrator password" onkeydown="if(event.key==='Enter'){doLogin()}">
                 </div>
-                <button class="btn primary" onclick="doLogin(this)">进入管理台</button>
+                <button class="btn primary" onclick="doLogin(this)">Sign In</button>
             </section>
         </div>
     `;
@@ -570,7 +553,6 @@ function renderApp() {
                 <div class="card-head">
                     <div>
                         <h2 class="card-title">同步活动趋势</h2>
-                        <p class="card-copy">按时间范围聚合成功 / 失败次数，快速观察异常波动。</p>
                     </div>
                     ${renderHourFilterButtons(hourOptions, selectedHours)}
                 </div>
@@ -580,7 +562,6 @@ function renderApp() {
                 <div class="card-head">
                     <div>
                         <h2 class="card-title">状态分布 + Profile 排行</h2>
-                        <p class="card-copy">快速定位登录状态和同步量最高的账号。</p>
                     </div>
                 </div>
                 ${renderStatusAndRanking(charts.status_breakdown || {}, charts.top_profiles || [])}
@@ -592,7 +573,6 @@ function renderApp() {
                 <div class="card-head">
                     <div>
                         <h2 class="card-title">失败原因聚合</h2>
-                        <p class="card-copy">把最近窗口的失败按原因聚类，便于快速定位问题。</p>
                     </div>
                     <span class="tag info">Top ${Math.min(failureReasons.length || 0, 6)}</span>
                 </div>
@@ -602,7 +582,6 @@ function renderApp() {
                 <div class="card-head">
                     <div>
                         <h2 class="card-title">目标实例分布</h2>
-                        <p class="card-copy">查看各 Flow2API 实例承载的账号数量与同步表现。</p>
                     </div>
                     <span class="tag primary">${escapeHtml(String(targetDistribution.length || 0))} 个实例</span>
                 </div>
@@ -614,7 +593,6 @@ function renderApp() {
             <div class="card-head">
                 <div>
                     <h2 class="card-title">默认目标配置</h2>
-                    <p class="card-copy">这里是全局默认值。单个 Profile 可在编辑弹窗中覆盖。</p>
                 </div>
                 <button class="btn primary" onclick="saveConfig(this)">保存默认配置</button>
             </div>
@@ -639,7 +617,6 @@ function renderApp() {
             <div class="card-head">
                 <div>
                     <h2 class="card-title">Profile 列表</h2>
-                    <p class="card-copy">支持单独覆盖目标地址、代理与连接 Token。</p>
                 </div>
                 <div class="button-row">
                     <button class="btn success" onclick="syncAll(this)">同步全部</button>
@@ -658,7 +635,6 @@ function renderApp() {
             <div class="card-head">
                 <div>
                     <h2 class="card-title">近期动态</h2>
-                    <p class="card-copy">最近的同步结果和目标地址，一眼看出是否有异常。</p>
                 </div>
                 <span class="tag info">最近 ${Math.min((dashboard.recent_activity || []).length, 18)} 条</span>
             </div>
@@ -1059,7 +1035,6 @@ function renderProfileModal(profile, editing) {
                 <div>
                     <span class="eyebrow">${editing ? "编辑 Profile" : "新建 Profile"}</span>
                     <h3 class="card-title">${editing ? "调整账号配置" : "添加新账号"}</h3>
-                    <p class="card-copy">这里可以配置代理、目标地址覆盖、连接 Token 覆盖等。</p>
                 </div>
                 <button class="btn ghost small" onclick="closeModal()">关闭</button>
             </div>
@@ -1167,7 +1142,6 @@ function openCookieModal(profileId) {
                 <div>
                     <span class="eyebrow">导入 Cookie</span>
                     <h3 class="card-title">快速恢复登录态</h3>
-                    <p class="card-copy">建议仅粘贴 labs.google 域名的 Cookie JSON。</p>
                 </div>
                 <button class="btn ghost small" onclick="closeModal()">关闭</button>
             </div>

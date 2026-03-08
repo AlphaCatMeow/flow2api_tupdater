@@ -85,6 +85,10 @@ body {
 }
 
 .login-hero {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 12px;
     background:
         linear-gradient(135deg, rgba(79, 124, 255, 0.18), rgba(11, 20, 35, 0.55)),
         linear-gradient(180deg, rgba(56, 189, 248, 0.12), transparent 60%);
@@ -131,7 +135,8 @@ body {
 }
 
 .login-subtitle {
-    margin: 18px 0 28px;
+    margin: 0;
+    max-width: 420px;
     font-size: 15px;
     line-height: 1.7;
 }
