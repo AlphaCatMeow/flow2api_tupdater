@@ -238,6 +238,130 @@ class BrowserManager:
                 continue
         return False
 
+    async def _fill_and_submit_first_visible(self, page, selectors: List[str], value: str) -> bool:
+        if not str(value or "").strip():
+            return False
+
+        for selector in selectors:
+            try:
+                locator = page.locator(selector).first
+                if await locator.count() <= 0 or not await locator.is_visible():
+                    continue
+                await locator.click(timeout=5000)
+                await locator.fill("", timeout=5000)
+                await locator.fill(value, timeout=5000)
+                await asyncio.sleep(0.4)
+                try:
+                    await locator.press("Enter", timeout=3000)
+                    await asyncio.sleep(1)
+                    return True
+                except Exception:
+                    pass
+                if await self._click_button_by_text(page, ["下一步", "Next", "继续", "Continue"]):
+                    return True
+                return True
+            except Exception:
+                continue
+        return False
+
+    def _detect_login_blocker(self, body_text: str) -> Optional[str]:
+        text = str(body_text or "")
+        lowered = text.lower()
+        if not lowered:
+            return None
+
+        blocked_markers = [
+            (
+                [
+                    "wrong password",
+                    "密码错误",
+                    "密码不正确",
+                ],
+                "登录密码错误，请检查后重试",
+            ),
+            (
+                [
+                    "couldn’t find your google account",
+                    "couldn't find your google account",
+                    "找不到您的 google 账号",
+                    "输入有效的电子邮件地址或电话号码",
+                ],
+                "登录账号不存在或无法识别",
+            ),
+            (
+                [
+                    "2-step verification",
+                    "verify it’s you",
+                    "verify it's you",
+                    "check your phone",
+                    "验证您本人身份",
+                    "两步验证",
+                    "两步驟驗證",
+                ],
+                "该账号需要人工完成二次验证，请改用手动登录",
+            ),
+            (
+                [
+                    "too many failed attempts",
+                    "尝试次数过多",
+                    "稍后再试",
+                    "try again later",
+                ],
+                "登录尝试过多，请稍后再试",
+            ),
+            (
+                [
+                    "enter the characters",
+                    "不是您的计算机？请使用访客模式登录",
+                    "confirm you’re not a robot",
+                    "确认您不是机器人",
+                ],
+                "登录过程中需要额外人工验证，请改用手动登录",
+            ),
+        ]
+
+        for markers, message in blocked_markers:
+            if any(marker.lower() in lowered for marker in markers):
+                return message
+        return None
+
+    async def _advance_google_login(self, page, login_account: str, login_password: str) -> bool:
+        if await self._click_button_by_text(page, ["Use another account", "使用其他账号", "使用其他帳戶"]):
+            return True
+        if await self._click_text_if_visible(page, [login_account]):
+            return True
+        if await self._fill_and_submit_first_visible(
+            page,
+            ["#identifierId", "input[name='identifier']", "input[type='email']"],
+            login_account,
+        ):
+            return True
+        if await self._fill_and_submit_first_visible(
+            page,
+            ["input[name='Passwd']", "input[type='password']"],
+            login_password,
+        ):
+            return True
+        return False
+
+    async def _install_page_route(self, page) -> None:
+        async def _route(route, request):
+            try:
+                if request.resource_type in BLOCKED_RESOURCE_TYPES:
+                    await route.abort()
+                else:
+                    await route.continue_()
+            except Exception:
+                try:
+                    await route.continue_()
+                except Exception:
+                    pass
+
+        try:
+            await page.route("**/*", _route)
+        except Exception:
+            pass
+
     async def _focus_browser_window_for_native_prompt(self) -> bool:
         if os.name != "nt" or not DESKTOP_AUTOMATION_AVAILABLE or pygetwindow is None:
             return False
@@ -396,6 +520,58 @@ class BrowserManager:
 
         return True
 
+    async def _settle_labs_session(self, profile: Dict[str, Any], context: BrowserContext, page) -> Optional[str]:
+        native_prompt_attempts = 0
+        for _ in range(40):
+            try:
+                await page.wait_for_load_state("domcontentloaded", timeout=3000)
+            except Exception:
+                pass
+
+            body_text = await self._safe_page_text(page)
+
+            if await self._is_labs_session_ready(page, body_text):
+                logger.info(f"[{profile['name']}] labs 会话页面已就绪")
+                break
+
+            if await self._handle_managed_account_prompts(page, body_text):
+                logger.info(f"[{profile['name']}] 已处理 Google / 资料确认提示")
+                continue
+
+            if await self._handle_labs_onboarding(page, body_text):
+                logger.info(f"[{profile['name']}] 已处理 labs 首次引导")
+                continue
+
+            if native_prompt_attempts < 3 and await self._handle_native_chrome_profile_prompts():
+                native_prompt_attempts += 1
+                logger.info(f"[{profile['name']}] 已处理 Chromium 原生资料提示")
+                continue
+
+            await asyncio.sleep(1.0)
+
+        token = await self._get_session_cookie(context)
+        deadline = asyncio.get_running_loop().time() + 12.0
+        while asyncio.get_running_loop().time() < deadline:
+            token = await self._get_session_cookie(context)
+            if token:
+                break
+            await asyncio.sleep(0.5)
+
+        if not token:
+            try:
+                await page.wait_for_load_state("networkidle", timeout=8000)
+            except Exception:
+                pass
+            token = await self._get_session_cookie(context)
+        return token
+
+    async def _persist_login_state(self, profile_id: int, token: Optional[str]) -> None:
+        update_data: Dict[str, Any] = {"is_logged_in": 1 if token else 0}
+        if token:
+            update_data["last_token"] = self._mask_token(token)
+            update_data["last_token_time"] = datetime.now().isoformat()
+        await profile_db.update_profile(profile_id, **update_data)
+
     def _parse_cookies_payload(self, cookies_json: str) -> List[Dict[str, Any]]:
         data = json.loads(cookies_json)
         if isinstance(data, list):
@@ -518,12 +694,7 @@ class BrowserManager:
                 await context.add_cookies(cookies)
                 token = await self._get_session_cookie(context)
 
-                await profile_db.update_profile(
-                    profile_id,
-                    is_logged_in=1 if token else 0,
-                    last_token=self._mask_token(token) if token else None,
-                    last_token_time=datetime.now().isoformat() if token else None,
-                )
+                await self._persist_login_state(profile_id, token)
 
                 return {
                     "success": True,
@@ -678,82 +849,18 @@ class BrowserManager:
         page = None
         try:
             page = await context.new_page()
-
-            async def _route(route, request):
-                try:
-                    if request.resource_type in BLOCKED_RESOURCE_TYPES:
-                        await route.abort()
-                    else:
-                        await route.continue_()
-                except Exception:
-                    try:
-                        await route.continue_()
-                    except Exception:
-                        pass
-
-            try:
-                await page.route("**/*", _route)
-            except Exception:
-                pass
+            await self._install_page_route(page)
 
             # 访问 labs 页面，必要时自动推进 Google / 托管资料 / labs 首次引导。
             logger.info(f"[{profile['name']}] 访问 {config.labs_url} 刷新 session...")
             await page.goto(config.labs_url, wait_until="domcontentloaded", timeout=60000)
 
-            native_prompt_attempts = 0
-            for _ in range(40):
-                try:
-                    await page.wait_for_load_state("domcontentloaded", timeout=3000)
-                except Exception:
-                    pass
+            token = await self._settle_labs_session(profile, context, page)
 
-                body_text = await self._safe_page_text(page)
-
-                if await self._is_labs_session_ready(page, body_text):
-                    logger.info(f"[{profile['name']}] labs 会话页面已就绪")
-                    break
-
-                if await self._handle_managed_account_prompts(page, body_text):
-                    logger.info(f"[{profile['name']}] 已处理 Google / 资料确认提示")
-                    continue
-
-                if await self._handle_labs_onboarding(page, body_text):
-                    logger.info(f"[{profile['name']}] 已处理 labs 首次引导")
-                    continue
-
-                if native_prompt_attempts < 3 and await self._handle_native_chrome_profile_prompts():
-                    native_prompt_attempts += 1
-                    logger.info(f"[{profile['name']}] 已处理 Chromium 原生资料提示")
-                    continue
-
-                await asyncio.sleep(1.0)
-
-            # 等待 cookie 更新：优先轮询 session cookie，减少资源占用
-            token = await self._get_session_cookie(context)
-            deadline = asyncio.get_running_loop().time() + 12.0
-            while asyncio.get_running_loop().time() < deadline:
-                token = await self._get_session_cookie(context)
-                if token:
-                    break
-                await asyncio.sleep(0.5)
-
-            if not token:
-                try:
-                    await page.wait_for_load_state("networkidle", timeout=8000)
-                except Exception:
-                    pass
-                token = await self._get_session_cookie(context)
-
+            await self._persist_login_state(profile["id"], token)
             if token:
-                await profile_db.update_profile(
-                    profile["id"],
-                    is_logged_in=1,
-                    last_token=self._mask_token(token),
-                    last_token_time=datetime.now().isoformat(),
-                )
                 logger.info(f"[{profile['name']}] Token 提取成功")
             else:
-                await profile_db.update_profile(profile["id"], is_logged_in=0)
                 logger.warning(f"[{profile['name']}] 未找到 Token，会话可能已过期")
 
             return token
@@ -767,6 +874,107 @@ class BrowserManager:
                     await page.close()
                 except Exception:
                     pass
+
+    async def auto_login(self, profile_id: int) -> Dict[str, Any]:
+        profile = await profile_db.get_profile(profile_id)
+        if not profile:
+            return {"success": False, "error": "Profile 不存在"}
+
+        login_account = str(profile.get("login_account") or "").strip()
+        login_password = str(profile.get("login_password") or "").strip()
+        if not login_account or not login_password:
+            return {"success": False, "error": "请先为该账号配置登录账号和登录密码"}
+
+        async with self._lock:
+            await self._close_active()
+
+            context = None
+            page = None
+            use_vnc = False
+            try:
+                if not self._playwright:
+                    await self.start()
+
+                profile_dir = self._get_profile_dir(profile_id)
+                os.makedirs(profile_dir, exist_ok=True)
+                self._clean_locks(profile_dir)
+                proxy = await self._get_proxy(profile)
+
+                if config.enable_vnc:
+                    use_vnc = await self._ensure_vnc_stack()
+
+                context = await self._playwright.chromium.launch_persistent_context(
+                    user_data_dir=profile_dir,
+                    headless=not use_vnc,
+                    viewport={"width": 1280, "height": 900},
+                    locale="en-US",
+                    timezone_id="America/New_York",
+                    proxy=proxy,
+                    args=LOGIN_BROWSER_ARGS if use_vnc else BROWSER_ARGS,
+                    ignore_default_args=["--enable-automation"],
+                )
+
+                page = context.pages[0] if context.pages else await context.new_page()
+                await self._install_page_route(page)
+                await page.goto(config.login_url, wait_until="domcontentloaded", timeout=60000)
+
+                for _ in range(45):
+                    try:
+                        await page.wait_for_load_state("domcontentloaded", timeout=3000)
+                    except Exception:
+                        pass
+
+                    body_text = await self._safe_page_text(page)
+                    blocker = self._detect_login_blocker(body_text)
+                    if blocker:
+                        await self._persist_login_state(profile_id, None)
+                        return {"success": False, "error": blocker, "requires_manual_action": True}
+
+                    if await self._is_labs_session_ready(page, body_text):
+                        break
+
+                    if await self._advance_google_login(page, login_account, login_password):
+                        continue
+
+                    if await self._handle_managed_account_prompts(page, body_text):
+                        continue
+
+                    if await self._handle_labs_onboarding(page, body_text):
+                        continue
+
+                    if use_vnc and await self._handle_native_chrome_profile_prompts():
+                        continue
+
+                    await asyncio.sleep(1.0)
+
+                token = await self._settle_labs_session(profile, context, page)
+                await self._persist_login_state(profile_id, token)
+                if not token:
+                    return {"success": False, "error": "未获取到会话令牌，请改用手动登录"}
+
+                return {
+                    "success": True,
+                    "is_logged_in": True,
+                    "has_token": True,
+                    "profile_name": profile["name"],
+                }
+
+            except Exception as e:
+                logger.error(f"[{profile['name']}] 自动登录失败: {e}")
+                return {"success": False, "error": str(e)}
+            finally:
+                if page:
+                    try:
+                        await page.close()
+                    except Exception:
+                        pass
+                if context:
+                    try:
+                        await context.close()
+                    except Exception:
+                        pass
+                if use_vnc:
+                    await self._stop_vnc_stack()
 
     async def check_login_status(self, profile_id: int) -> Dict[str, Any]:
         """检查登录状态"""

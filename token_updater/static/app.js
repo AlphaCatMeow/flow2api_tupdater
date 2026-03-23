@@ -572,8 +572,8 @@ function renderApp() {
 
         <div class="notice">
             ${vncEnabled
-                ? `登录方式：创建账号 → 点击「登录」→ 在远程登录窗口完成谷歌登录 → 点击「关闭浏览器」保存状态。当前 ${vncRunning ? "远程登录已可用" : "远程登录暂未启动，会在点击登录后按需拉起"}。`
-                : "当前已禁用远程登录。如需重新授权，请将环境变量 ENABLE_VNC 设为 1 后重启容器。"}
+                ? `登录方式：创建账号或导入账号密码 → 已配置凭据可点「自动登录」→ 需要人工接管时点「登录」并在远程窗口完成谷歌登录 → 点击「关闭浏览器」保存状态。当前 ${vncRunning ? "远程登录已可用" : "远程登录暂未启动，会在点击登录后按需拉起"}。`
+                : "当前已禁用远程登录。已配置凭据的账号仍可尝试后台自动登录；如需人工接管，请将环境变量 ENABLE_VNC 设为 1 后重启容器。"}
             <div id="stream-status-copy" class="notice-inline">${escapeHtml(streamMeta.copy)}</div>
         </div>
 
@@ -617,13 +617,14 @@ function renderApp() {
                 </div>
                 <div class="button-row">
                     <button class="btn success" onclick="syncAll(this)">同步全部</button>
+                    <button class="btn ghost" onclick="openCredentialImportModal()">导入账号</button>
                     <button class="btn primary" onclick="openProfileModal()">新建账号</button>
                 </div>
             </div>
             <div class="profiles-grid">
                 ${profiles.length ? profiles.map(renderProfileCard).join("") : `
                     <div class="empty-state">
-                        还没有账号。先创建一个账号，再通过远程登录或导入会话数据完成登录。
+                        还没有账号。先创建账号，或点击上方「导入账号」批量导入账号密码，再通过自动登录、远程登录或导入会话数据完成登录。
                     </div>`}
             </div>
         </section>
@@ -851,6 +852,7 @@ function renderProfileCard(profile) {
                 <span class="badge ${profile.is_logged_in ? "success" : "warning"}">${profile.is_logged_in ? "已登录" : "未登录"}</span>
                 <span class="badge ${resultTone}">${escapeHtml(lastResult || "暂无处理结果")}</span>
                 <span class="badge info">${escapeHtml(targetLabel)}</span>
+                ${profile.has_login_credentials ? `<span class="badge primary">已配置凭据</span>` : ""}
                 ${profile.has_connection_token_override ? `<span class="badge primary">已覆盖令牌</span>` : ""}
                 ${profile.proxy_url ? `<span class="badge primary">代理已配置</span>` : ""}
             </div>
@@ -875,7 +877,10 @@ function renderProfileCard(profile) {
             </div>
 
             <div class="profile-footer">
-                <div class="button-row">
+                <div class="button-row wrap-row">
+                    ${!profile.is_browser_active && profile.has_login_credentials
+                        ? `<button class="btn primary small" onclick="autoLogin(${profile.id}, this)">自动登录</button>`
+                        : ""}
                     ${state.dashboard.config.enable_vnc
                         ? (profile.is_browser_active
                             ? `<button class="btn warning small" onclick="closeBrowser(${profile.id}, this)">关闭浏览器</button>`
@@ -1028,6 +1033,7 @@ async function loadProfileModal(profileId) {
 function renderProfileModal(profile, editing) {
     state.modal = {type: "profile", profileId: profile.id || null, editing};
     const hasOverride = Boolean(profile.connection_token_override || profile.connection_token_override_preview);
+    const hasLoginCredentials = Boolean(profile.has_login_credentials || profile.has_login_password);
     showModal(`
         <div class="modal-card">
             <div class="modal-head">
@@ -1045,6 +1051,15 @@ function renderProfileModal(profile, editing) {
                 <div class="field">
                     <label for="profile-remark">备注</label>
                     <input id="profile-remark" value="${escapeAttr(profile.remark || "")}" placeholder="写点备注，后面找起来更快">
+                </div>
+                <div class="field">
+                    <label for="profile-login-account">登录账号</label>
+                    <input id="profile-login-account" value="${escapeAttr(profile.login_account || "")}" placeholder="邮箱、手机号或 Workspace 账号">
+                </div>
+                <div class="field">
+                    <label for="profile-login-password">登录密码</label>
+                    <input id="profile-login-password" type="password" placeholder="${escapeAttr(hasLoginCredentials ? "已保存，留空则不修改" : "留空则不配置自动登录")}">
+                    <span class="field-hint">保存后会用于账号卡片里的自动登录。</span>
                 </div>
                 <div class="field">
                     <label>启用状态</label>
@@ -1076,6 +1091,13 @@ function renderProfileModal(profile, editing) {
                         <span>清空当前连接令牌覆盖，改回使用全局默认值</span>
                     </label>
                 </div>` : ""}
+            ${editing && hasLoginCredentials ? `
+                <div class="field" style="margin-top:16px;">
+                    <label class="switch">
+                        <input id="profile-clear-login-credentials" type="checkbox">
+                        <span>清空当前登录账号和登录密码，关闭自动登录</span>
+                    </label>
+                </div>` : ""}
             <div class="modal-actions">
                 <button class="btn ghost" onclick="closeModal()">取消</button>
                 <button class="btn primary" onclick="saveProfile(this)">${editing ? "保存变更" : "创建账号"}</button>
@@ -1088,6 +1110,9 @@ async function saveProfile(button) {
     const modal = state.modal || {};
     const name = (document.getElementById("profile-name")?.value || "").trim();
     const remark = (document.getElementById("profile-remark")?.value || "").trim();
+    const loginAccount = (document.getElementById("profile-login-account")?.value || "").trim();
+    const loginPassword = document.getElementById("profile-login-password")?.value || "";
+    const clearLoginCredentials = Boolean(document.getElementById("profile-clear-login-credentials")?.checked);
     const proxyUrl = (document.getElementById("profile-proxy")?.value || "").trim();
     const flow2apiUrl = (document.getElementById("profile-target-url")?.value || "").trim();
     const tokenOverride = document.getElementById("profile-target-token")?.value || "";
@@ -1103,9 +1128,16 @@ async function saveProfile(button) {
         name,
         remark,
         is_active: isActive,
+        login_account: loginAccount,
         proxy_url: proxyUrl,
         flow2api_url: flow2apiUrl,
     };
+    if (!modal.editing || loginPassword) {
+        payload.login_password = loginPassword;
+    }
+    if (modal.editing && clearLoginCredentials) {
+        payload.clear_login_credentials = true;
+    }
     if (!modal.editing || tokenOverride) {
         payload.connection_token_override = tokenOverride;
     }
@@ -1130,6 +1162,56 @@ async function saveProfile(button) {
         closeModal();
         await refreshDashboard(false, true);
         toast(modal.editing ? "账号已保存" : "账号已创建", "success");
+    });
+}
+
+function openCredentialImportModal() {
+    state.modal = {type: "import-accounts"};
+    showModal(`
+        <div class="modal-card">
+            <div class="modal-head">
+                <div>
+                    <span class="eyebrow">导入账号密码</span>
+                    <h3 class="card-title">批量导入自动登录凭据</h3>
+                </div>
+                <button class="btn ghost small" onclick="closeModal()">关闭</button>
+            </div>
+            <div class="field">
+                <label for="accounts-import-content">账号文本</label>
+                <textarea id="accounts-import-content" placeholder="名称,账号,密码&#10;备用号,foo@gmail.com,pass123&#10;&#10;也支持两列：账号,密码"></textarea>
+                <span class="field-hint">支持“名称,账号,密码”、“账号,密码”、Tab、| 或 ---- 分隔。名称重复时默认更新该账号的登录凭据。</span>
+            </div>
+            <div class="field">
+                <label class="switch">
+                    <input id="accounts-import-update-existing" type="checkbox" checked>
+                    <span>名称重复时更新已有账号的登录凭据</span>
+                </label>
+            </div>
+            <div class="modal-actions">
+                <button class="btn ghost" onclick="closeModal()">取消</button>
+                <button class="btn primary" onclick="submitCredentialImport(this)">开始导入</button>
+            </div>
+        </div>
+    `);
+}
+
+async function submitCredentialImport(button) {
+    const content = (document.getElementById("accounts-import-content")?.value || "").trim();
+    const updateExisting = Boolean(document.getElementById("accounts-import-update-existing")?.checked);
+    if (!content) {
+        toast("请输入要导入的账号文本", "error");
+        return;
+    }
+
+    await withButton(button, "导入中...", async () => {
+        const result = await json(`${API}/api/profiles/import-accounts`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({content, update_existing: updateExisting}),
+        });
+        closeModal(true);
+        await refreshDashboard(false, true);
+        toast(`导入完成：新增 ${result.created || 0}，更新 ${result.updated || 0}，跳过 ${result.skipped || 0}`, "success");
     });
 }
 
@@ -1198,6 +1280,14 @@ async function checkLogin(profileId, button) {
         const result = await json(`${API}/api/profiles/${profileId}/check-login`, {method: "POST"});
         await refreshDashboard(false, true);
         toast(result.is_logged_in ? "已登录" : "未登录或已过期", result.is_logged_in ? "success" : "error");
+    });
+}
+
+async function autoLogin(profileId, button) {
+    await withButton(button, "登录中...", async () => {
+        const result = await json(`${API}/api/profiles/${profileId}/auto-login`, {method: "POST"});
+        await refreshDashboard(false, true);
+        toast(result.has_token ? "自动登录成功，已获取会话令牌" : "自动登录成功", "success");
     });
 }
 
@@ -1401,11 +1491,14 @@ window.saveConfig = saveConfig;
 window.openProfileModal = openProfileModal;
 window.saveProfile = saveProfile;
 window.closeModal = closeModal;
+window.openCredentialImportModal = openCredentialImportModal;
+window.submitCredentialImport = submitCredentialImport;
 window.openCookieModal = openCookieModal;
 window.submitCookies = submitCookies;
 window.syncAll = syncAll;
 window.syncProfile = syncProfile;
 window.checkLogin = checkLogin;
+window.autoLogin = autoLogin;
 window.launchBrowser = launchBrowser;
 window.closeBrowser = closeBrowser;
 window.deleteProfile = deleteProfile;
