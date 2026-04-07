@@ -1490,7 +1490,7 @@ async function submitCookies(button) {
     });
 }
 
-async function exportCookies(button, kind = "session") {
+async function exportCookies(button, kind = "google") {
     const modal = state.modal || {};
     const textareaId = kind === "google" ? "google-cookies" : "cookie-json";
 

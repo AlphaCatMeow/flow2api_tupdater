@@ -28,6 +28,7 @@ class ProfileCredentialHelperTests(unittest.TestCase):
             api._resolve_login_credentials("", "", "alpha@example.com", None)
 
     def test_normalize_cookie_export_kind_supports_aliases(self):
+        self.assertEqual(api._normalize_cookie_export_kind(None), "google")
         self.assertEqual(api._normalize_cookie_export_kind("session"), "session")
         self.assertEqual(api._normalize_cookie_export_kind("labs"), "session")
         self.assertEqual(api._normalize_cookie_export_kind("google"), "google")

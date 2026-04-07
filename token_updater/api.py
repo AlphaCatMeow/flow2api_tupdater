@@ -551,7 +551,7 @@ class ImportAccountsRequest(BaseModel):
 
 
 def _normalize_cookie_export_kind(kind: str | None) -> str:
-    normalized = str(kind or "session").strip().lower()
+    normalized = str(kind or "google").strip().lower()
     if normalized in {"session", "labs"}:
         return "session"
     if normalized in {"google", "protocol"}:
@@ -944,7 +944,7 @@ async def import_cookies(profile_id: int, request: ImportCookiesRequest, token: 
 @app.get("/api/profiles/{profile_id}/export-cookies")
 async def export_cookies(
     profile_id: int,
-    kind: str = Query("session", description="session|google"),
+    kind: str = Query("google", description="session|google，默认 google"),
     token: str = Depends(verify_session),
 ):
     profile = await profile_db.get_profile(profile_id)
